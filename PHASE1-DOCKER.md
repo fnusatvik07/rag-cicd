@@ -115,10 +115,7 @@ docker images rag-classic
 ### Step 3: Run the container
 
 ```bash
-docker run -d --name rag-test -p 8080:8080 \
-  -e PINECONE_API_KEY=your-key-here \
-  -e OPENAI_API_KEY=your-key-here \
-  rag-classic
+docker run -d --name rag-test -p 8080:8080 --env-file .env rag-classic
 ```
 
 **What to verify**:
