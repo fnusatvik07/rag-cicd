@@ -1,0 +1,172 @@
+# CD Pipeline - Deploy to AWS (ECS Fargate)
+# Same Docker image, different cloud.
+#
+# Flow:
+#   1. CI passes (lint, test)
+#   2. Build Docker image
+#   3. Push to ECR (Elastic Container Registry)
+#   4. Deploy to ECS Fargate (serverless containers on AWS)
+#
+# AWS Secrets needed in GitHub Secrets:
+#   - AWS_ACCESS_KEY_ID: IAM user access key
+#   - AWS_SECRET_ACCESS_KEY: IAM user secret key
+#   - AWS_ACCOUNT_ID: Your 12-digit AWS account ID
+#   - PINECONE_API_KEY: Pinecone API key
+#   - OPENAI_API_KEY: OpenAI API key
+
+name: Deploy (AWS)
+
+on:
+  push:
+    branches: [main]              # Deploy to AWS from main branch
+  workflow_dispatch:               # Allow manual trigger
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: rag-classic
+  ECS_CLUSTER: rag-classic-cluster
+  ECS_SERVICE: rag-classic-service
+  ECS_TASK_DEFINITION: rag-classic-task
+  CONTAINER_NAME: rag-classic
+
+jobs:
+  ci:
+    name: Lint & Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          pip install uv
+          uv venv .venv
+          . .venv/bin/activate
+          uv pip install ".[test]"
+          uv pip install ruff
+
+      - name: Lint
+        run: |
+          . .venv/bin/activate
+          ruff check .
+
+      - name: Test
+        run: |
+          . .venv/bin/activate
+          pytest tests/ -v
+
+  deploy:
+    name: Build & Deploy to AWS ECS
+    needs: ci
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Step 1: Authenticate with AWS
+      # Uses IAM user credentials stored in GitHub Secrets
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # Step 2: Login to ECR (Elastic Container Registry)
+      # ECR is AWS's Docker image storage (like GCP Artifact Registry)
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # Step 3: Build and push Docker image to ECR
+      - name: Build and push Docker image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+      # Step 4: Update ECS task definition with new image
+      # Downloads current task def, updates the image tag, registers new revision
+      - name: Download current task definition
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition $ECS_TASK_DEFINITION \
+            --query taskDefinition > task-def.json
+
+      - name: Update task definition with new image
+        id: task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-def.json
+          container-name: ${{ env.CONTAINER_NAME }}
+          image: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+          environment-variables: |
+            PINECONE_API_KEY=${{ secrets.PINECONE_API_KEY }}
+            OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+            PORT=8080
+
+      # Step 5: Deploy to ECS
+      # Registers the new task definition and updates the service
+      - name: Deploy to ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.task-def.outputs.task-definition }}
+          service: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
+
+      - name: Show deployment info
+        run: |
+          echo "Deployed to AWS ECS"
+          echo "Cluster: $ECS_CLUSTER"
+          echo "Service: $ECS_SERVICE"
+          echo "Image: ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:${{ github.sha }}"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# AWS SETUP STEPS (do these once before first deploy):
+#
+# 1. Create ECR repository:
+#    aws ecr create-repository --repository-name rag-classic --region us-east-1
+#
+# 2. Create ECS cluster:
+#    aws ecs create-cluster --cluster-name rag-classic-cluster
+#
+# 3. Create task definition (first time):
+#    aws ecs register-task-definition \
+#      --family rag-classic-task \
+#      --network-mode awsvpc \
+#      --requires-compatibilities FARGATE \
+#      --cpu 1024 --memory 2048 \
+#      --execution-role-arn arn:aws:iam::<ACCOUNT_ID>:role/ecsTaskExecutionRole \
+#      --container-definitions '[{
+#        "name": "rag-classic",
+#        "image": "<ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/rag-classic:latest",
+#        "portMappings": [{"containerPort": 8080, "protocol": "tcp"}],
+#        "essential": true
+#      }]'
+#
+# 4. Create ECS service:
+#    aws ecs create-service \
+#      --cluster rag-classic-cluster \
+#      --service-name rag-classic-service \
+#      --task-definition rag-classic-task \
+#      --desired-count 1 \
+#      --launch-type FARGATE \
+#      --network-configuration "awsvpcConfiguration={
+#        subnets=[subnet-xxxxx],
+#        securityGroups=[sg-xxxxx],
+#        assignPublicIp=ENABLED
+#      }"
+#
+# 5. Create IAM user for GitHub Actions:
+#    - Create user with programmatic access
+#    - Attach policies: AmazonECS_FullAccess, AmazonEC2ContainerRegistryFullAccess
+#    - Save access key ID and secret access key as GitHub Secrets
+# ──────────────────────────────────────────────────────────────────────────────

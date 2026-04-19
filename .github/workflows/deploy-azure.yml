@@ -1,0 +1,159 @@
+# CD Pipeline - Deploy to Azure Container Apps
+# Same Docker image, different cloud.
+#
+# Flow:
+#   1. CI passes (lint, test)
+#   2. Build Docker image
+#   3. Push to ACR (Azure Container Registry)
+#   4. Deploy to Azure Container Apps (serverless containers on Azure)
+#
+# Azure Secrets needed in GitHub Secrets:
+#   - AZURE_CREDENTIALS: Service principal JSON (az ad sp create-for-rbac output)
+#   - ACR_LOGIN_SERVER: yourregistry.azurecr.io
+#   - ACR_USERNAME: ACR admin username
+#   - ACR_PASSWORD: ACR admin password
+#   - PINECONE_API_KEY: Pinecone API key
+#   - OPENAI_API_KEY: OpenAI API key
+
+name: Deploy (Azure)
+
+on:
+  push:
+    branches: [staging]            # Deploy to Azure from staging branch
+  workflow_dispatch:                # Allow manual trigger
+
+env:
+  AZURE_RESOURCE_GROUP: rag-classic-rg
+  AZURE_LOCATION: eastus
+  CONTAINER_APP_NAME: rag-classic
+  CONTAINER_APP_ENV: rag-classic-env
+  ACR_NAME: ragclassicacr
+
+jobs:
+  ci:
+    name: Lint & Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          pip install uv
+          uv venv .venv
+          . .venv/bin/activate
+          uv pip install ".[test]"
+          uv pip install ruff
+
+      - name: Lint
+        run: |
+          . .venv/bin/activate
+          ruff check .
+
+      - name: Test
+        run: |
+          . .venv/bin/activate
+          pytest tests/ -v
+
+  deploy:
+    name: Build & Deploy to Azure Container Apps
+    needs: ci
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Step 1: Authenticate with Azure
+      # Uses a service principal stored as JSON in GitHub Secrets
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      # Step 2: Login to ACR (Azure Container Registry)
+      # ACR is Azure's Docker image storage
+      - name: Login to Azure Container Registry
+        uses: azure/docker-login@v2
+        with:
+          login-server: ${{ secrets.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      # Step 3: Build and push Docker image to ACR
+      - name: Build and push Docker image
+        run: |
+          docker build -t ${{ secrets.ACR_LOGIN_SERVER }}/$CONTAINER_APP_NAME:${{ github.sha }} .
+          docker build -t ${{ secrets.ACR_LOGIN_SERVER }}/$CONTAINER_APP_NAME:latest .
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/$CONTAINER_APP_NAME:${{ github.sha }}
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/$CONTAINER_APP_NAME:latest
+
+      # Step 4: Deploy to Azure Container Apps
+      # Container Apps is Azure's serverless container platform (like Cloud Run)
+      - name: Deploy to Azure Container Apps
+        uses: azure/container-apps-deploy-action@v2
+        with:
+          resourceGroup: ${{ env.AZURE_RESOURCE_GROUP }}
+          containerAppName: ${{ env.CONTAINER_APP_NAME }}
+          containerAppEnvironment: ${{ env.CONTAINER_APP_ENV }}
+          imageToDeploy: ${{ secrets.ACR_LOGIN_SERVER }}/${{ env.CONTAINER_APP_NAME }}:${{ github.sha }}
+          targetPort: 8080
+          ingress: external
+          environmentVariables: >
+            PINECONE_API_KEY=${{ secrets.PINECONE_API_KEY }}
+            OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+            PORT=8080
+
+      - name: Show deployment info
+        run: |
+          echo "Deployed to Azure Container Apps"
+          FQDN=$(az containerapp show \
+            --name $CONTAINER_APP_NAME \
+            --resource-group $AZURE_RESOURCE_GROUP \
+            --query properties.configuration.ingress.fqdn -o tsv)
+          echo "URL: https://$FQDN"
+          echo "Health: https://$FQDN/health"
+          echo "Docs: https://$FQDN/docs"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# AZURE SETUP STEPS (do these once before first deploy):
+#
+# 1. Install Azure CLI and login:
+#    az login
+#
+# 2. Create resource group:
+#    az group create --name rag-classic-rg --location eastus
+#
+# 3. Create Azure Container Registry:
+#    az acr create \
+#      --resource-group rag-classic-rg \
+#      --name ragclassicacr \
+#      --sku Basic \
+#      --admin-enabled true
+#
+# 4. Get ACR credentials (for GitHub Secrets):
+#    az acr credential show --name ragclassicacr
+#    # Save: loginServer, username, password as GitHub Secrets
+#
+# 5. Create Container Apps environment:
+#    az containerapp env create \
+#      --name rag-classic-env \
+#      --resource-group rag-classic-rg \
+#      --location eastus
+#
+# 6. Create service principal for GitHub Actions:
+#    az ad sp create-for-rbac \
+#      --name "github-deploy" \
+#      --role contributor \
+#      --scopes /subscriptions/<SUBSCRIPTION_ID>/resourceGroups/rag-classic-rg \
+#      --sdk-auth
+#    # Save the JSON output as AZURE_CREDENTIALS in GitHub Secrets
+#
+# 7. GitHub Secrets to add:
+#    - AZURE_CREDENTIALS: JSON from step 6
+#    - ACR_LOGIN_SERVER: ragclassicacr.azurecr.io
+#    - ACR_USERNAME: from step 4
+#    - ACR_PASSWORD: from step 4
+# ──────────────────────────────────────────────────────────────────────────────

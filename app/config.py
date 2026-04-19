@@ -33,6 +33,13 @@ OPENAI_MODEL: str = "gpt-4o-mini"
 MAX_TOKENS: int = 1024
 TEMPERATURE: float = 0.2
 
+# ── LangSmith Telemetry (optional) ──────────────────────────────────────────
+# LangChain auto-reads these env vars — no code changes needed.
+# Set LANGCHAIN_TRACING_V2=true to enable tracing.
+LANGSMITH_ENABLED: bool = os.getenv("LANGCHAIN_TRACING_V2", "false").lower() == "true"
+LANGSMITH_API_KEY: str = os.getenv("LANGCHAIN_API_KEY", "")
+LANGSMITH_PROJECT: str = os.getenv("LANGCHAIN_PROJECT", "rag-classic")
+
 
 if __name__ == "__main__":
     print("=== Config Test ===")
@@ -43,4 +50,5 @@ if __name__ == "__main__":
     print(f"Rerank model     : {PINECONE_RERANK_MODEL}")
     print(f"Chunk size       : {CHUNK_SIZE}, overlap: {CHUNK_OVERLAP}")
     print(f"LLM model        : {OPENAI_MODEL}")
+    print(f"LangSmith        : {'✅ enabled' if LANGSMITH_ENABLED else '⏸️  disabled'}")
     print("✅ Config loaded successfully!")
