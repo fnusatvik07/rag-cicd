@@ -27,5 +27,9 @@ env/
 *.tar.gz
 *.whl
 
-# Class planning
+# Class planning (local only)
 plan.md
+PPT-PROMPT.md
+.claude/
+excalidraw.log
+uv.lock

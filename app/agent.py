@@ -7,13 +7,13 @@ Pipeline: Query → Decompose → Multi-Retrieve → Rerank → Generate
 """
 
 import json
-from typing import List, Dict
+
 from langchain_openai import ChatOpenAI
 
-from app.config import OPENAI_API_KEY, OPENAI_MODEL, MAX_TOKENS, TEMPERATURE
-from app.retrieval import search
+from app.config import MAX_TOKENS, OPENAI_API_KEY, OPENAI_MODEL
+from app.generation import generate_answer
 from app.reranker import rerank
-from app.generation import generate_answer, build_context_block
+from app.retrieval import search
 
 _llm = ChatOpenAI(
     model=OPENAI_MODEL,
@@ -44,7 +44,7 @@ Examples:
 """
 
 
-def decompose_query(question: str) -> List[str]:
+def decompose_query(question: str) -> list[str]:
     """Use the LLM to decompose a complex query into sub-queries."""
     messages = [
         ("system", DECOMPOSE_PROMPT),
@@ -73,7 +73,7 @@ def decompose_query(question: str) -> List[str]:
 
 # ── Multi-Query Retrieval ────────────────────────────────────────────────────
 
-def multi_retrieve(sub_queries: List[str], use_reranker: bool = True, top_k: int = 20, top_n: int = 5) -> List[Dict]:
+def multi_retrieve(sub_queries: list[str], use_reranker: bool = True, top_k: int = 20, top_n: int = 5) -> list[dict]:
     """
     Run retrieval for each sub-query and merge results with deduplication.
     Keeps the highest score when a chunk appears in multiple sub-query results.
@@ -104,7 +104,7 @@ def agentic_rag(
     top_k: int = 20,
     top_n: int = 5,
     debug: bool = False,
-) -> Dict:
+) -> dict:
     """
     Full agentic RAG pipeline:
     1. Decompose the query into sub-queries
@@ -155,7 +155,7 @@ if __name__ == "__main__":
         print(f"  {i}. {sq}")
 
     # Step 2: Multi-retrieve
-    print(f"\nRetrieving for each sub-query...")
+    print("\nRetrieving for each sub-query...")
     chunks = multi_retrieve(sub_queries)
     print(f"Merged: {len(chunks)} unique chunks")
 
@@ -163,7 +163,7 @@ if __name__ == "__main__":
     print(f"Sources covered: {sources}")
 
     # Step 3: Generate
-    print(f"\nGenerating answer...")
+    print("\nGenerating answer...")
     result = agentic_rag(question)
 
     print(f"\n{'='*60}")
