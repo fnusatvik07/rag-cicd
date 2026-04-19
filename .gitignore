@@ -29,3 +29,6 @@ env/
 
 # Class planning
 plan.md
+.claude/
+excalidraw.log
+uv.lock

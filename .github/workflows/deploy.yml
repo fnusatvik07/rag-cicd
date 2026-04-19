@@ -9,7 +9,7 @@ name: "Deploy: GCP (Dev/Prod)"
 
 on:
   push:
-    branches: [develop, main]
+    branches: [develop]
 
 env:
   GCP_PROJECT_ID: rag-pipeline-493809
