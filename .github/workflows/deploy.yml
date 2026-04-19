@@ -102,7 +102,7 @@ jobs:
             --region $GCP_REGION \
             --platform managed \
             --allow-unauthenticated \
-            --set-env-vars "^##^PINECONE_API_KEY=${{ secrets.PINECONE_API_KEY }}##OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" \
+            --set-env-vars "^##^PINECONE_API_KEY=${{ secrets.PINECONE_API_KEY }}##OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}##LANGSMITH_TRACING=true##LANGSMITH_ENDPOINT=https://api.smith.langchain.com##LANGSMITH_API_KEY=${{ secrets.LANGSMITH_API_KEY }}##LANGSMITH_PROJECT=rag-classic-dev" \
             --memory 2Gi \
             --cpu 2 \
             --min-instances 0 \
