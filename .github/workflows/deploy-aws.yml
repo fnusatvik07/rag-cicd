@@ -102,78 +102,56 @@ jobs:
       - name: Deploy to App Runner
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          PINECONE_KEY: ${{ secrets.PINECONE_API_KEY }}
+          OPENAI_KEY: ${{ secrets.OPENAI_API_KEY }}
+          LANGSMITH_KEY: ${{ secrets.LANGSMITH_API_KEY }}
         run: |
+          ROLE_ARN=$(aws iam get-role --role-name AppRunnerECRAccessRole --query 'Role.Arn' --output text)
+          IMAGE_URI="$ECR_REGISTRY/$ECR_REPOSITORY:${{ github.sha }}"
+
+          # Write config to file to avoid shell escaping issues
+          cat > /tmp/source-config.json << EOF
+          {
+            "AuthenticationConfiguration": {
+              "AccessRoleArn": "$ROLE_ARN"
+            },
+            "AutoDeploymentsEnabled": false,
+            "ImageRepository": {
+              "ImageIdentifier": "$IMAGE_URI",
+              "ImageRepositoryType": "ECR",
+              "ImageConfiguration": {
+                "Port": "8080",
+                "RuntimeEnvironmentVariables": {
+                  "PINECONE_API_KEY": "$PINECONE_KEY",
+                  "OPENAI_API_KEY": "$OPENAI_KEY",
+                  "LANGSMITH_TRACING": "true",
+                  "LANGSMITH_ENDPOINT": "https://api.smith.langchain.com",
+                  "LANGSMITH_API_KEY": "$LANGSMITH_KEY",
+                  "LANGSMITH_PROJECT": "rag-classic-prod",
+                  "PORT": "8080"
+                }
+              }
+            }
+          }
+          EOF
+
           # Check if service exists
           SERVICE_ARN=$(aws apprunner list-services \
             --query "ServiceSummaryList[?ServiceName=='$APP_RUNNER_SERVICE'].ServiceArn | [0]" \
             --output text 2>/dev/null)
 
-          ROLE_ARN=$(aws iam get-role --role-name AppRunnerECRAccessRole --query 'Role.Arn' --output text)
-
           if [ "$SERVICE_ARN" = "None" ] || [ -z "$SERVICE_ARN" ]; then
             echo "Creating new App Runner service..."
             aws apprunner create-service \
               --service-name $APP_RUNNER_SERVICE \
-              --source-configuration "{
-                \"AuthenticationConfiguration\": {
-                  \"AccessRoleArn\": \"$ROLE_ARN\"
-                },
-                \"AutoDeploymentsEnabled\": false,
-                \"ImageRepository\": {
-                  \"ImageIdentifier\": \"$ECR_REGISTRY/$ECR_REPOSITORY:${{ github.sha }}\",
-                  \"ImageRepositoryType\": \"ECR\",
-                  \"ImageConfiguration\": {
-                    \"Port\": \"8080\",
-                    \"RuntimeEnvironmentVariables\": {
-                      \"PINECONE_API_KEY\": \"${{ secrets.PINECONE_API_KEY }}\",
-                      \"OPENAI_API_KEY\": \"${{ secrets.OPENAI_API_KEY }}\",
-                      \"LANGSMITH_TRACING\": \"true\",
-                      \"LANGSMITH_ENDPOINT\": \"https://api.smith.langchain.com\",
-                      \"LANGSMITH_API_KEY\": \"${{ secrets.LANGSMITH_API_KEY }}\",
-                      \"LANGSMITH_PROJECT\": \"rag-classic-prod\",
-                      \"PORT\": \"8080\"
-                    }
-                  }
-                }
-              }" \
-              --instance-configuration "{
-                \"Cpu\": \"1024\",
-                \"Memory\": \"2048\"
-              }" \
-              --health-check-configuration "{
-                \"Protocol\": \"HTTP\",
-                \"Path\": \"/health\",
-                \"Interval\": 10,
-                \"Timeout\": 5,
-                \"HealthyThreshold\": 1,
-                \"UnhealthyThreshold\": 5
-              }"
+              --source-configuration file:///tmp/source-config.json \
+              --instance-configuration '{"Cpu":"1024","Memory":"2048"}' \
+              --health-check-configuration '{"Protocol":"HTTP","Path":"/health","Interval":10,"Timeout":5,"HealthyThreshold":1,"UnhealthyThreshold":5}'
           else
             echo "Updating existing App Runner service..."
             aws apprunner update-service \
               --service-arn $SERVICE_ARN \
-              --source-configuration "{
-                \"AuthenticationConfiguration\": {
-                  \"AccessRoleArn\": \"$ROLE_ARN\"
-                },
-                \"AutoDeploymentsEnabled\": false,
-                \"ImageRepository\": {
-                  \"ImageIdentifier\": \"$ECR_REGISTRY/$ECR_REPOSITORY:${{ github.sha }}\",
-                  \"ImageRepositoryType\": \"ECR\",
-                  \"ImageConfiguration\": {
-                    \"Port\": \"8080\",
-                    \"RuntimeEnvironmentVariables\": {
-                      \"PINECONE_API_KEY\": \"${{ secrets.PINECONE_API_KEY }}\",
-                      \"OPENAI_API_KEY\": \"${{ secrets.OPENAI_API_KEY }}\",
-                      \"LANGSMITH_TRACING\": \"true\",
-                      \"LANGSMITH_ENDPOINT\": \"https://api.smith.langchain.com\",
-                      \"LANGSMITH_API_KEY\": \"${{ secrets.LANGSMITH_API_KEY }}\",
-                      \"LANGSMITH_PROJECT\": \"rag-classic-prod\",
-                      \"PORT\": \"8080\"
-                    }
-                  }
-                }
-              }"
+              --source-configuration file:///tmp/source-config.json
           fi
 
       # Step 6: Wait for deployment and show URL
