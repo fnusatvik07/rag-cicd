@@ -103,11 +103,12 @@ jobs:
             --platform managed \
             --allow-unauthenticated \
             --set-env-vars "PINECONE_API_KEY=${{ secrets.PINECONE_API_KEY }},OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" \
-            --memory 512Mi \
+            --memory 1Gi \
             --cpu 1 \
             --min-instances 0 \
             --max-instances 3 \
             --timeout 60 \
+            --startup-cpu-boost \
             --quiet
 
       # Step 6: Show the deployed URL
