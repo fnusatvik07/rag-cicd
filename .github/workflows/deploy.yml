@@ -1,0 +1,119 @@
+# CD Pipeline - Build, Push, and Deploy to Google Cloud Run
+# This is the DEPLOYMENT pipeline. It only runs AFTER CI passes.
+#
+# What happens:
+#   1. CI pipeline runs (lint, test, Docker build) - from ci.yml
+#   2. If CI passes AND we're on develop branch:
+#      -> Build Docker image
+#      -> Push to Google Artifact Registry (container storage)
+#      -> Deploy to Cloud Run (serverless container platform)
+#      -> App is live on the internet
+
+name: Deploy
+
+on:
+  push:
+    branches: [develop]           # Only deploy from develop branch
+
+# Environment variables used across all steps
+env:
+  GCP_PROJECT_ID: rag-pipeline-493809
+  GCP_REGION: us-central1
+  SERVICE_NAME: rag-classic
+  IMAGE: us-central1-docker.pkg.dev/rag-pipeline-493809/rag-classic/rag-classic
+
+jobs:
+  # ---- Job 1: CI checks (must pass before deploy) ----
+  ci:
+    name: Lint, Test & Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          pip install uv
+          uv venv .venv
+          . .venv/bin/activate
+          uv pip install ".[test]"
+          uv pip install ruff
+
+      - name: Lint
+        run: |
+          . .venv/bin/activate
+          ruff check .
+
+      - name: Test
+        run: |
+          . .venv/bin/activate
+          pytest tests/ -v
+
+  # ---- Job 2: Build & Deploy (only if CI passes) ----
+  deploy:
+    name: Build & Deploy to Cloud Run
+    needs: ci                     # Won't run unless ci job passes
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Step 1: Authenticate with Google Cloud
+      # Uses a service account key stored in GitHub Secrets
+      # This gives the runner permission to push images and deploy
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      # Step 2: Configure Docker to push to Artifact Registry
+      # Artifact Registry is Google's container image storage
+      # This is WHERE the Docker image goes (the answer from Phase 4!)
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
+
+      # Step 3: Build the Docker image
+      # Tag with commit SHA for traceability (know exactly which code is deployed)
+      # Also tag as "latest" for convenience
+      - name: Build Docker image
+        run: docker build -t $IMAGE:$GITHUB_SHA -t $IMAGE:latest .
+
+      # Step 4: Push to Artifact Registry
+      # NOW the image has a permanent home (unlike Phase 4 where it was discarded)
+      # Anyone with access can pull this image and run it
+      - name: Push Docker image
+        run: |
+          docker push $IMAGE:$GITHUB_SHA
+          docker push $IMAGE:latest
+
+      # Step 5: Deploy to Cloud Run
+      # Cloud Run pulls the image from Artifact Registry and runs it
+      # Secrets are injected as environment variables (never in the image)
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy $SERVICE_NAME \
+            --image $IMAGE:$GITHUB_SHA \
+            --region $GCP_REGION \
+            --platform managed \
+            --allow-unauthenticated \
+            --set-env-vars "PINECONE_API_KEY=${{ secrets.PINECONE_API_KEY }},OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" \
+            --memory 512Mi \
+            --cpu 1 \
+            --min-instances 0 \
+            --max-instances 3 \
+            --timeout 60 \
+            --quiet
+
+      # Step 6: Show the deployed URL
+      - name: Show deployed URL
+        run: |
+          URL=$(gcloud run services describe $SERVICE_NAME --region $GCP_REGION --format 'value(status.url)')
+          echo "🚀 Deployed to: $URL"
+          echo "   Health check: $URL/health"
+          echo "   Swagger docs: $URL/docs"
