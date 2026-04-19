@@ -1,0 +1,66 @@
+# CI Pipeline - Runs on every push and pull request
+# This is the quality gate: code must pass lint, tests, and Docker build
+# before it can be merged or deployed.
+
+name: "CI: Lint, Test & Build"
+
+on:
+  pull_request:
+    branches: [develop, staging, main]
+
+jobs:
+  ci:
+    name: Lint, Test & Build
+    runs-on: ubuntu-latest        # GitHub provides free Ubuntu VMs
+
+    steps:
+      # ---- Step 1: Get the code ----
+      # Pull our repo code onto the GitHub runner (a fresh Ubuntu VM)
+      # Without this, the runner has no code to work with
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ---- Step 2: Setup Python ----
+      # Install the same Python version we use locally
+      # The runner comes with some Python but we need 3.13 specifically
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      # ---- Step 3: Install dependencies ----
+      # Same as running `uv pip install .` on our laptop
+      # This installs FastAPI, Pinecone, LangChain, etc.
+      - name: Install dependencies
+        run: |
+          pip install uv
+          uv venv .venv
+          . .venv/bin/activate
+          uv pip install ".[test]"
+          uv pip install ruff
+
+      # ---- Step 4: Lint (ruff) ----
+      # QUALITY GATE: checks code style, unused imports, deprecated syntax
+      # If this fails, the pipeline stops here. No point running tests
+      # on code that has obvious issues.
+      - name: Lint with ruff
+        run: |
+          . .venv/bin/activate
+          ruff check .
+
+      # ---- Step 5: Run tests (pytest) ----
+      # QUALITY GATE: runs all unit tests
+      # Tests verify our chunking logic, context building, and API endpoints
+      # No API keys needed - these are pure unit tests
+      - name: Run tests
+        run: |
+          . .venv/bin/activate
+          pytest tests/ -v
+
+      # ---- Step 6: Build Docker image ----
+      # QUALITY GATE: verifies the Dockerfile builds successfully
+      # Catches: missing files, broken COPY commands, bad base image
+      # The image is NOT pushed anywhere yet - just built to verify it works
+      # It stays on the runner and is discarded when the job ends
+      - name: Build Docker image
+        run: docker build -t rag-classic:test .
