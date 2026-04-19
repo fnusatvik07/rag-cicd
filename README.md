@@ -1,264 +1,189 @@
-# RAG Classic - Agentic RAG Chatbot
+# RAG Classic - Agentic RAG Chatbot with CI/CD
 
-A production-style Retrieval-Augmented Generation (RAG) chatbot built with **Pinecone**, **LangChain**, and **FastAPI**.
+A production-ready RAG chatbot with a complete CI/CD pipeline deploying to **GCP**, **Azure**, and **AWS**.
 
-It ingests PDF documents, chunks them with page-number tracking, stores them in a Pinecone serverless index with integrated embedding, and answers questions with inline citations and page references. Features an **agentic pipeline** that decomposes complex queries into sub-queries for multi-source retrieval.
+Built with **Pinecone**, **LangChain**, **FastAPI**, and an **agentic pipeline** that decomposes complex queries into sub-queries for multi-source retrieval.
+
+## What This Repo Demonstrates
+
+```
+Developer writes code
+  -> git push
+    -> GitHub Actions
+      -> Lint (ruff)
+      -> Test (pytest)
+      -> Security scan (Snyk + Trivy)
+      -> Build Docker image
+      -> Push to container registry
+      -> Deploy to cloud
+        -> develop  -> GCP Cloud Run      (Dev)
+        -> staging  -> Azure Container Apps (Staging)
+        -> main     -> AWS App Runner      (Prod)
+      -> LangSmith traces every LLM call
+```
 
 ## Architecture
 
 ```
-  INGESTION PIPELINE
+INGESTION: PDF -> Page Extraction -> Chunking -> Pinecone (integrated embedding)
 
-  PDF --> Page Extraction --> Chunking --> Pinecone
-          (per-page text)    (512 chars,   (upsert with
-                              64 overlap)  integrated
-                                           embedding)
-
-  AGENTIC QUERY PIPELINE
-
-  Question --> Agent --> Sub-queries --> Multi-Retrieve --> Rerank --> Generate
-               (LLM      (per-entity     (Pinecone         (BGE-M3)   (ChatOpenAI
-               decompose)  queries)        search)                      with [1][2])
+QUERY:     Question -> Agent Decompose -> Multi-Retrieve -> Rerank -> Generate Answer
 ```
 
-| Stage          | What it does                                       | Model / Service                  |
-|----------------|----------------------------------------------------|----------------------------------|
-| Ingestion      | Extracts text per page from PDF, splits into chunks | `pypdf`                          |
-| Embedding      | Stores chunks with server-side embedding            | Pinecone `multilingual-e5-large` |
-| Decomposition  | Breaks complex queries into focused sub-queries     | OpenAI `gpt-4o-mini`             |
-| Retrieval      | Semantic vector search with source diversity        | Pinecone integrated search       |
-| Reranking      | Re-orders results by true relevance to the query    | Pinecone `bge-reranker-v2-m3`    |
-| Generation     | Produces an answer with inline citations            | LangChain `ChatOpenAI` (`gpt-4o-mini`) |
+| Stage | What | Model / Service |
+|-------|------|-----------------|
+| Ingestion | PDF text extraction + chunking | pypdf |
+| Embedding | Server-side embedding | Pinecone multilingual-e5-large |
+| Decomposition | Break complex queries into sub-queries | OpenAI gpt-4o-mini |
+| Retrieval | Semantic search with source diversity | Pinecone integrated search |
+| Reranking | Re-order by relevance | Pinecone bge-reranker-v2-m3 |
+| Generation | Answer with inline citations | LangChain ChatOpenAI |
 
 ## Project Structure
 
 ```
 rag-classic/
 ├── app/
-│   ├── __init__.py        # Package marker
-│   ├── config.py          # Settings & environment variables
-│   ├── ingestion.py       # PDF/TXT loading, page extraction, chunking
-│   ├── embedding.py       # Create Pinecone index & upsert records
-│   ├── retrieval.py       # Semantic vector search with source diversity
-│   ├── reranker.py        # Two-stage rerank with BGE reranker
-│   ├── generation.py      # LLM answer generation with citations
-│   ├── agent.py           # Agentic RAG: query decomposition & multi-retrieve
-│   └── api.py             # FastAPI REST endpoints
-├── docs/                  # Source documents
-│   ├── Apple_Q24.pdf
-│   └── Nike-Inc-2025_10K.pdf
-├── rag_test.py            # Bare-minimum pipeline walkthrough (no functions)
-├── main.py                # CLI entry point (ingest / ask / serve)
-├── pyproject.toml         # Dependencies
-├── .env                   # API keys (not committed)
-├── .gitignore
-└── README.md
-```
-
-## Setup
-
-### 1. Clone & install
-
-```bash
-git clone https://github.com/fnusatvik07/rag-cicd.git
-cd rag-cicd
-
-# Install with uv (recommended)
-uv pip install -e .
-```
-
-### 2. Add API keys
-
-Create a `.env` file in the project root:
-
-```env
-PINECONE_API_KEY=your-pinecone-api-key
-OPENAI_API_KEY=your-openai-api-key
-```
-
-### 3. Verify config
-
-```bash
-python -m app.config
-```
-
-```
-=== Config Test ===
-PINECONE_API_KEY : ✅ set
-OPENAI_API_KEY   : ✅ set
-Index name       : rag-classic
-Embed model      : multilingual-e5-large
-Rerank model     : bge-reranker-v2-m3
-Chunk size       : 512, overlap: 64
-LLM model        : gpt-4o-mini
-✅ Config loaded successfully!
+│   ├── config.py          # Settings and env vars
+│   ├── ingestion.py       # PDF loading, chunking
+│   ├── embedding.py       # Pinecone index and upsert
+│   ├── retrieval.py       # Semantic search with source diversity
+│   ├── reranker.py        # Two-stage reranking
+│   ├── generation.py      # LLM answer with citations
+│   ├── agent.py           # Agentic query decomposition
+│   └── api.py             # FastAPI endpoints
+├── tests/
+│   ├── conftest.py        # Dummy env vars for CI
+│   ├── test_ingestion.py  # 8 tests
+│   ├── test_generation.py # 4 tests
+│   └── test_api.py        # 4 tests (no API keys needed)
+├── .github/workflows/
+│   ├── ci.yml             # Lint + Test + Docker build (PRs)
+│   ├── security.yml       # Snyk + Trivy (PRs)
+│   ├── deploy.yml         # GCP Cloud Run (develop branch)
+│   ├── deploy-azure.yml   # Azure Container Apps (staging branch)
+│   └── deploy-aws.yml     # AWS App Runner (main branch)
+├── Dockerfile             # Production container
+├── pyproject.toml         # Dependencies + ruff config
+├── main.py                # CLI: ingest / ask / serve
+└── rag_test.py            # Step-by-step pipeline walkthrough
 ```
 
 ## Quick Start
 
 ```bash
-# 1. Install
-uv pip install -e .
+# Clone and install
+git clone https://github.com/fnusatvik07/rag-cicd.git
+cd rag-cicd
+uv pip install -e ".[test]"
 
-# 2. Ingest documents
+# Add API keys
+cp .env.example .env
+# Edit .env with your PINECONE_API_KEY and OPENAI_API_KEY
+
+# Ingest documents
 python main.py ingest docs/Apple_Q24.pdf
 python main.py ingest docs/Nike-Inc-2025_10K.pdf
 
-# 3. Ask a question (agentic mode)
+# Ask questions
 python main.py ask "What was Apple's revenue in Q4 2024?"
-
-# 4. Cross-document comparison (auto-decomposes)
 python main.py ask "Compare Apple and Nike revenue"
 
-# 5. Or start the API server
+# Start API server
 python main.py serve
+# Open http://localhost:8000/docs for Swagger UI
 ```
 
-## Pipeline Walkthrough (`rag_test.py`)
+## CI/CD Pipeline
 
-A single-file, no-functions walkthrough of the entire RAG pipeline, great for learning or demos:
+### Workflows
 
-```bash
-python rag_test.py
-```
+| Workflow | Triggers On | What It Does |
+|----------|------------|--------------|
+| CI: Lint, Test and Build | Pull requests | Ruff lint, pytest, Docker build |
+| Security: Snyk and Trivy | Pull requests | Dependency and container scanning |
+| Deploy: GCP (Dev) | Push to develop | Build, push to Artifact Registry, deploy to Cloud Run |
+| Deploy: Azure (Staging) | Push to staging | Build, push to ACR, deploy to Container Apps |
+| Deploy: AWS (Prod) | Push to main | Build, push to ECR, deploy to App Runner |
 
-It runs all 9 steps linearly:
-
-| Step | Description                                      |
-|------|--------------------------------------------------|
-| 1    | Extract text from PDF (page by page)             |
-| 2    | Chunk text with page number tracking             |
-| 3    | Create Pinecone index (skips if exists)          |
-| 4    | Upsert chunks (skips if already done)            |
-| 5    | Semantic search (retrieval)                      |
-| 6    | Rerank results (shows position changes)          |
-| 7    | Generate answer with LangChain ChatOpenAI        |
-| 8    | Generate clean final answer from reranked chunks |
-| 9    | Test `/generate` API endpoint (if server running)|
-
-## CLI Usage
-
-### Ingest a document
-
-```bash
-python main.py ingest docs/Apple_Q24.pdf
-python main.py ingest docs/Nike-Inc-2025_10K.pdf
-```
-
-### Ask a question
-
-```bash
-# Default (agentic mode with reranking + citations)
-python main.py ask "What was Apple's revenue in Q4 2024?"
-
-# Cross-document queries (agent auto-decomposes)
-python main.py ask "Compare Apple and Nike revenue"
-
-# Debug mode — shows sub-queries, merged results, source coverage
-python main.py ask "Compare Apple and Nike revenue" --debug
-
-# Skip reranking — raw vector search only
-python main.py ask "What was Apple's revenue in Q4 2024?" --no-rerank
-```
-
-**Example output:**
+### Branch Strategy
 
 ```
-🔍 Question: Compare Apple and Nike revenue
-
-🧠 Agent decomposed into 2 sub-queries:
-   1. What was Apple's total revenue?
-   2. What was Nike's total revenue?
-
-💬 Answer:
-Apple's total net sales were $416.2 billion [1], while Nike's total
-revenues were $46.3 billion [2].
-
-References:
-[1] Apple_Q24.pdf, p.1
-[2] Nike-Inc-2025_10K.pdf, p.32
-
-📄 Sources used (decompose → multi-retrieve → rerank → generate):
-  [1] Apple_Q24.pdf, p.1 (score: 0.9147)
-  [2] Nike-Inc-2025_10K.pdf, p.32 (score: 0.9938)
+feature/* -> develop -> staging -> main
+               |          |         |
+              Dev      Staging    Prod
+             (GCP)    (Azure)    (AWS)
 ```
 
-### Test individual modules
+### Environment-Based Config
 
-```bash
-python -m app.config                              # Verify env vars
-python -m app.ingestion docs/Apple_Q24.pdf        # Test PDF extraction & chunking
-python -m app.embedding                           # Test upsert (dummy data)
-python -m app.retrieval "What was Apple's revenue" # Test vector search
-python -m app.reranker "What was Apple's revenue"  # Test reranking
-python -m app.generation                           # Test LLM generation
-python -m app.agent "Compare Apple and Nike"       # Test agentic pipeline
+Same Docker image, different configuration per environment:
+
+| Setting | Dev | Staging | Prod |
+|---------|-----|---------|------|
+| Cloud | GCP Cloud Run | Azure Container Apps | AWS App Runner |
+| LangSmith Project | rag-classic-dev | rag-classic-staging | rag-classic-prod |
+| Pinecone Index | rag-classic-dev | rag-classic-staging | rag-classic |
+
+## Observability
+
+LangSmith traces every LLM call with zero code changes:
+
+```env
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=your-key
+LANGSMITH_PROJECT=rag-classic-dev
 ```
 
-## API Server
+Traces show: query decomposition, retrieval, reranking, generation, token usage, latency, and cost.
 
-```bash
-python main.py serve
-```
+## API Endpoints
 
-Server runs at **http://localhost:8000** — Swagger docs at **http://localhost:8000/docs**.
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | /health | Health check |
+| POST | /ingest | Ingest a document (PDF/TXT) |
+| POST | /chat | Agentic RAG pipeline (decompose, retrieve, rerank, generate) |
+| POST | /generate | Retrieve, rerank, generate (clean response) |
+| POST | /search | Search only (no LLM generation) |
 
-### Endpoints
+## Documentation
 
-| Method | Endpoint     | Description                                          |
-|--------|--------------|------------------------------------------------------|
-| GET    | `/health`    | Health check                                         |
-| POST   | `/ingest`    | Ingest a document by file path                       |
-| POST   | `/chat`      | Ask a question (agentic RAG pipeline + debug mode)   |
-| POST   | `/generate`  | Retrieve → rerank → generate (clean response)        |
-| POST   | `/search`    | Search only (no generation)                          |
+| Guide | What It Covers |
+|-------|---------------|
+| [GCP Setup Guide](GCP-SETUP-GUIDE.md) | Cloud Run deployment from scratch |
+| [Azure Setup Guide](AZURE-SETUP-GUIDE.md) | Container Apps deployment from scratch |
+| [AWS Setup Guide](AWS-SETUP-GUIDE.md) | App Runner deployment from scratch |
+| [Beyond Class](BEYOND-CLASS.md) | Kubernetes, rate limiting, IaC, monitoring |
 
-### Examples
+### Phase-by-Phase Explainers
 
-**Ingest:**
-```bash
-curl -X POST http://localhost:8000/ingest \
-  -H "Content-Type: application/json" \
-  -d '{"file_path": "/absolute/path/to/docs/Apple_Q24.pdf"}'
-```
+Each phase branch has a detailed explainer doc:
 
-**Chat (agentic mode, default):**
-```bash
-curl -X POST http://localhost:8000/chat \
-  -H "Content-Type: application/json" \
-  -d '{"question": "Compare Apple and Nike revenue"}'
-```
+| Phase | Branch | Doc | Topic |
+|-------|--------|-----|-------|
+| 1 | phase/1-docker | [PHASE1-DOCKER.md](PHASE1-DOCKER.md) | Dockerfile from scratch |
+| 2 | phase/2-testing | [PHASE2-TESTING.md](PHASE2-TESTING.md) | pytest unit tests |
+| 3 | phase/3-linting | [PHASE3-LINTING.md](PHASE3-LINTING.md) | Ruff linter setup |
+| 4 | phase/4-ci-pipeline | [PHASE4-CI-PIPELINE.md](PHASE4-CI-PIPELINE.md) | GitHub Actions CI |
+| 5 | phase/5-security | [PHASE5-SECURITY.md](PHASE5-SECURITY.md) | Snyk + Trivy scanning |
+| 6 | phase/6-environments | [PHASE6-ENVIRONMENTS.md](PHASE6-ENVIRONMENTS.md) | Environment strategy |
+| 7 | phase/7-deploy | [PHASE7-DEPLOY.md](PHASE7-DEPLOY.md) | Cloud Run deployment |
+| 8 | - | [PHASE8-TELEMETRY.md](PHASE8-TELEMETRY.md) | LangSmith observability |
 
-**Chat (classic mode, no agent):**
-```bash
-curl -X POST http://localhost:8000/chat \
-  -H "Content-Type: application/json" \
-  -d '{"question": "What was Nike total revenue?", "agentic": false}'
-```
+## Tech Stack
 
-**Generate (retrieve → rerank → generate):**
-```bash
-curl -X POST http://localhost:8000/generate \
-  -H "Content-Type: application/json" \
-  -d '{"question": "What was Nike total revenue?", "use_reranker": true, "top_k": 10, "top_n": 3}'
-```
-
-**Search only (no LLM):**
-```bash
-curl -X POST http://localhost:8000/search \
-  -H "Content-Type: application/json" \
-  -d '{"query": "Apple earnings", "top_k": 5, "use_reranker": true}'
-```
-
-## Key Features
-
-- **Agentic Query Decomposition** — LLM agent breaks complex queries into sub-queries for better multi-source retrieval
-- **Source Diversity** — Retrieval ensures smaller documents aren't drowned out by larger ones
-- **Multi-Source Retrieval** — Runs separate searches per sub-query and merges results with deduplication
-- **LangChain Integration** — Uses `langchain-openai` `ChatOpenAI` for LLM generation
-- **Integrated Embedding** — Pinecone handles embedding server-side via `multilingual-e5-large`
-- **Page Number Tracking** — Each chunk carries its source page number(s) through the entire pipeline
-- **Two-Stage Reranking** — Diverse retrieval followed by `bge-reranker-v2-m3` reranking
-- **Inline Citations** — LLM answers include `[1]`, `[2]` references with source file and page numbers
-- **Debug Mode** — `--debug` flag shows sub-queries, merged results, and source coverage
-- **Classic Fallback** — Set `agentic: false` in the API to use the classic single-query pipeline
+| Component | Technology |
+|-----------|-----------|
+| Language | Python 3.13 |
+| API Framework | FastAPI |
+| Vector Database | Pinecone (serverless) |
+| Embedding | Pinecone multilingual-e5-large (server-side) |
+| Reranker | Pinecone bge-reranker-v2-m3 |
+| LLM | OpenAI gpt-4o-mini via LangChain |
+| Containerization | Docker |
+| CI/CD | GitHub Actions |
+| Security | Snyk (dependencies) + Trivy (container) |
+| Observability | LangSmith |
+| Linting | Ruff |
+| Testing | pytest |
