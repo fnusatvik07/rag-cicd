@@ -19,7 +19,6 @@ RUN uv venv /app/.venv && \
 # 6. NOW copy application code (this layer rebuilds on code changes)
 COPY app/ app/
 COPY main.py .
-COPY docs/ docs/
 
 # 7. Put venv on PATH so python finds our packages
 ENV PATH="/app/.venv/bin:$PATH"

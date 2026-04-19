@@ -96,26 +96,22 @@ jobs:
       # Cloud Run pulls the image from Artifact Registry and runs it
       # Secrets are injected as environment variables (never in the image)
       - name: Deploy to Cloud Run
+        env:
+          PINECONE_KEY: ${{ secrets.PINECONE_API_KEY }}
+          OPENAI_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           gcloud run deploy $SERVICE_NAME \
             --image $IMAGE:$GITHUB_SHA \
             --region $GCP_REGION \
             --platform managed \
             --allow-unauthenticated \
-            --update-env-vars "PINECONE_API_KEY=${{ secrets.PINECONE_API_KEY }}" \
-            --update-env-vars "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" \
-            --memory 1Gi \
+            --set-env-vars "PINECONE_API_KEY=${PINECONE_KEY},OPENAI_API_KEY=${OPENAI_KEY}" \
+            --memory 2Gi \
             --cpu 2 \
             --min-instances 0 \
             --max-instances 3 \
             --timeout 300 \
             --cpu-boost \
-            --quiet
-
-          # Update startup probe separately (gcloud run services update)
-          gcloud run services update $SERVICE_NAME \
-            --region $GCP_REGION \
-            --startup-probe httpGet.path=/health,initialDelaySeconds=0,timeoutSeconds=240,periodSeconds=10 \
             --quiet
 
       # Step 6: Show the deployed URL
