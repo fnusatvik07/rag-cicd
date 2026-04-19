@@ -110,10 +110,12 @@ jobs:
             --max-instances 3 \
             --timeout 300 \
             --cpu-boost \
-            --startup-probe-path /health \
-            --startup-probe-initial-delay 0 \
-            --startup-probe-timeout 240 \
-            --startup-probe-period 10 \
+            --quiet
+
+          # Update startup probe separately (gcloud run services update)
+          gcloud run services update $SERVICE_NAME \
+            --region $GCP_REGION \
+            --startup-probe httpGet.path=/health,initialDelaySeconds=0,timeoutSeconds=240,periodSeconds=10 \
             --quiet
 
       # Step 6: Show the deployed URL
