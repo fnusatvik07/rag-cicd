@@ -87,23 +87,117 @@ Start the FastAPI server:
 - `--port $PORT`: Use the PORT env var so Cloud Run can control which port to use
 - `sh -c` is needed to expand the `$PORT` variable at runtime
 
-## How to use
+## Testing Checklist
+
+Make sure Docker Desktop is running before starting.
+
+### Step 1: Build the image
 
 ```bash
-# Build the image
 docker build -t rag-classic .
+```
 
-# Run it (pass API keys at runtime, never bake them in)
-docker run -p 8080:8080 \
-  -e PINECONE_API_KEY=your-key \
-  -e OPENAI_API_KEY=your-key \
+**What to verify**:
+- [ ] Build completes without errors
+- [ ] Each step shows "CACHED" on subsequent builds (layer caching works)
+- [ ] No `.env` file or secrets in the build output
+
+### Step 2: Check the image
+
+```bash
+docker images rag-classic
+```
+
+**What to verify**:
+- [ ] Image exists in the list
+- [ ] Image size is under 300MB (slim base image working)
+
+### Step 3: Run the container
+
+```bash
+docker run -d --name rag-test -p 8080:8080 \
+  -e PINECONE_API_KEY=your-key-here \
+  -e OPENAI_API_KEY=your-key-here \
   rag-classic
+```
 
-# Test it
+**What to verify**:
+- [ ] Container starts without crashing
+- [ ] Check logs: `docker logs rag-test` shows uvicorn startup message
+
+### Step 4: Test the endpoints
+
+```bash
+# Health check
 curl http://localhost:8080/health
 
-# Check image size
-docker images rag-classic
+# Swagger docs (open in browser)
+open http://localhost:8080/docs
+
+# Chat endpoint
+curl -X POST http://localhost:8080/chat \
+  -H "Content-Type: application/json" \
+  -d '{"question": "What was Apple revenue in Q4 2024?"}'
+
+# Search endpoint (no LLM call, faster)
+curl -X POST http://localhost:8080/search \
+  -H "Content-Type: application/json" \
+  -d '{"query": "Nike revenue", "top_k": 3}'
+```
+
+**What to verify**:
+- [ ] `/health` returns `{"status": "ok"}`
+- [ ] `/docs` loads Swagger UI in browser
+- [ ] `/chat` returns an answer with sources and citations
+- [ ] `/search` returns search results with scores
+
+### Step 5: Verify .dockerignore is working
+
+```bash
+# Shell into the running container and check no secrets leaked
+docker exec rag-test ls -la /app/
+
+# These should NOT exist inside the container:
+docker exec rag-test cat /app/.env 2>&1        # Should say "No such file"
+docker exec rag-test ls /app/.git 2>&1         # Should say "No such file"
+docker exec rag-test ls /app/.venv 2>&1        # Should say "No such file"
+docker exec rag-test cat /app/rag_test.py 2>&1 # Should say "No such file"
+```
+
+**What to verify**:
+- [ ] `.env` is NOT in the container
+- [ ] `.git` is NOT in the container
+- [ ] `.venv` is NOT in the container
+- [ ] `rag_test.py` is NOT in the container
+- [ ] Only `app/`, `main.py`, `docs/`, `pyproject.toml` are present
+
+### Step 6: Test layer caching
+
+```bash
+# Make a small code change (add a comment to main.py)
+echo "# test" >> main.py
+
+# Rebuild - deps layer should say CACHED
+docker build -t rag-classic .
+
+# Undo the change
+git checkout main.py
+```
+
+**What to verify**:
+- [ ] Steps 1-5 (base image, uv install, deps) show "CACHED"
+- [ ] Only step 6 (COPY app code) rebuilds
+- [ ] Rebuild takes seconds, not minutes
+
+### Step 7: Cleanup
+
+```bash
+# Stop and remove container
+docker stop rag-test
+docker rm rag-test
+
+# Remove image (optional)
+docker rmi rag-classic
 ```
 
 ## Key Takeaways
