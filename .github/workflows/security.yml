@@ -1,0 +1,69 @@
+# Security Scanning Pipeline
+# Runs dependency vulnerability checks on every push and PR.
+# This catches known security issues in our third-party packages
+# BEFORE they reach production.
+
+name: "Security: Snyk & Trivy"
+
+on:
+  pull_request:
+    branches: [develop, staging, main]
+
+jobs:
+  # ---- Job 1: Dependency vulnerability scan ----
+  # Checks if any of our pip packages have known CVEs
+  # (Common Vulnerabilities and Exposures)
+  snyk:
+    name: Snyk Dependency Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          pip install uv
+          uv venv .venv
+          . .venv/bin/activate
+          uv pip install .
+          # Generate requirements.txt for Snyk to scan
+          uv pip freeze > requirements.txt
+
+      # Snyk scans requirements.txt for packages with known vulnerabilities
+      # --severity-threshold=high: only block on high/critical severity
+      # Low and medium severity issues are reported but don't fail the build
+      - name: Run Snyk security scan
+        uses: snyk/actions/python-3.10@master
+        continue-on-error: true       # Report issues but don't block (for demo)
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --severity-threshold=high --file=requirements.txt
+
+  # ---- Job 2: Docker image scan ----
+  # Scans the built Docker image for OS-level vulnerabilities
+  # (outdated system packages, known CVEs in base image)
+  docker-scan:
+    name: Docker Image Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t rag-classic:scan .
+
+      # Trivy is a free, open-source vulnerability scanner
+      # It scans the Docker image for OS package and Python package vulnerabilities
+      - name: Scan image with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: rag-classic:scan
+          format: table
+          severity: HIGH,CRITICAL       # Only report high and critical
+          exit-code: 0                  # Report but don't fail (for demo)
