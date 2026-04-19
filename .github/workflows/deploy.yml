@@ -105,11 +105,15 @@ jobs:
             --update-env-vars "PINECONE_API_KEY=${{ secrets.PINECONE_API_KEY }}" \
             --update-env-vars "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" \
             --memory 1Gi \
-            --cpu 1 \
+            --cpu 2 \
             --min-instances 0 \
             --max-instances 3 \
             --timeout 300 \
             --cpu-boost \
+            --startup-probe-path /health \
+            --startup-probe-initial-delay 0 \
+            --startup-probe-timeout 240 \
+            --startup-probe-period 10 \
             --quiet
 
       # Step 6: Show the deployed URL
