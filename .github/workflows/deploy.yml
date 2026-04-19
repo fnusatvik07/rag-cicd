@@ -108,7 +108,7 @@ jobs:
             --min-instances 0 \
             --max-instances 3 \
             --timeout 60 \
-            --startup-cpu-boost \
+            --cpu-boost \
             --quiet
 
       # Step 6: Show the deployed URL
