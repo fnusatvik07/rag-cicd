@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls -la /Users/datasense/Desktop/rag-classic/.env*)",
+      "Bash(python:*)",
+      "Bash(curl -s -X POST http://localhost:8000/chat -H 'Content-Type: application/json' -d '{\"question\": \"Compare Apple and Nike revenue\"}')",
+      "Bash(curl -s -X POST http://localhost:8000/search -H 'Content-Type: application/json' -d '{\"query\": \"Nike gross margin\", \"top_k\": 3}')",
+      "Bash(curl -s -X POST http://localhost:8000/generate -H 'Content-Type: application/json' -d '{\"question\": \"What were Nike operating expenses in fiscal 2025?\", \"use_reranker\": true}')",
+      "Bash(kill 38921)",
+      "Bash(docker build:*)",
+      "Bash(docker info:*)",
+      "Bash(docker --version)",
+      "Bash(pytest:*)",
+      "Bash(ruff check:*)",
+      "Bash(git reset:*)",
+      "Bash(git log:*)",
+      "Bash(git merge:*)"
+    ]
+  }
+}
