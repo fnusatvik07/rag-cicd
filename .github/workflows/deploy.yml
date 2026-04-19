@@ -1,25 +1,19 @@
-# CD Pipeline - Build, Push, and Deploy to Google Cloud Run
-# This is the DEPLOYMENT pipeline. It only runs AFTER CI passes.
+# CD Pipeline - Environment-based deployment to Google Cloud Run
 #
-# What happens:
-#   1. CI pipeline runs (lint, test, Docker build) - from ci.yml
-#   2. If CI passes AND we're on develop branch:
-#      -> Build Docker image
-#      -> Push to Google Artifact Registry (container storage)
-#      -> Deploy to Cloud Run (serverless container platform)
-#      -> App is live on the internet
+# Branch -> Environment mapping:
+#   develop -> Dev   (rag-classic-dev,  LANGSMITH_PROJECT=rag-classic-dev)
+#   staging -> Stage (rag-classic-stage, LANGSMITH_PROJECT=rag-classic-staging)
+#   main    -> Prod  (rag-classic-prod,  LANGSMITH_PROJECT=rag-classic-prod)
 
 name: Deploy
 
 on:
   push:
-    branches: [develop]           # Only deploy from develop branch
+    branches: [develop, staging, main]
 
-# Environment variables used across all steps
 env:
   GCP_PROJECT_ID: rag-pipeline-493809
   GCP_REGION: us-central1
-  SERVICE_NAME: rag-classic
   IMAGE: us-central1-docker.pkg.dev/rag-pipeline-493809/rag-classic/rag-classic
 
 jobs:
@@ -52,18 +46,42 @@ jobs:
           . .venv/bin/activate
           pytest tests/ -v
 
-  # ---- Job 2: Build & Deploy (only if CI passes) ----
-  deploy:
-    name: Build & Deploy to Cloud Run
-    needs: ci                     # Won't run unless ci job passes
+  # ---- Job 2: Set environment based on branch ----
+  set-env:
+    name: Set Environment
     runs-on: ubuntu-latest
+    outputs:
+      service_name: ${{ steps.env.outputs.service_name }}
+      langsmith_project: ${{ steps.env.outputs.langsmith_project }}
+      environment: ${{ steps.env.outputs.environment }}
+    steps:
+      - name: Determine environment from branch
+        id: env
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/develop" ]; then
+            echo "service_name=rag-classic-dev" >> $GITHUB_OUTPUT
+            echo "langsmith_project=rag-classic-dev" >> $GITHUB_OUTPUT
+            echo "environment=dev" >> $GITHUB_OUTPUT
+          elif [ "${{ github.ref }}" = "refs/heads/staging" ]; then
+            echo "service_name=rag-classic-stage" >> $GITHUB_OUTPUT
+            echo "langsmith_project=rag-classic-staging" >> $GITHUB_OUTPUT
+            echo "environment=staging" >> $GITHUB_OUTPUT
+          elif [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "service_name=rag-classic-prod" >> $GITHUB_OUTPUT
+            echo "langsmith_project=rag-classic-prod" >> $GITHUB_OUTPUT
+            echo "environment=production" >> $GITHUB_OUTPUT
+          fi
+
+  # ---- Job 3: Build & Deploy ----
+  deploy:
+    name: Deploy to ${{ needs.set-env.outputs.environment }}
+    needs: [ci, set-env]
+    runs-on: ubuntu-latest
+    environment: ${{ needs.set-env.outputs.environment }}
 
     steps:
       - uses: actions/checkout@v4
 
-      # Step 1: Authenticate with Google Cloud
-      # Uses a service account key stored in GitHub Secrets
-      # This gives the runner permission to push images and deploy
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
@@ -72,37 +90,25 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      # Step 2: Configure Docker to push to Artifact Registry
-      # Artifact Registry is Google's container image storage
-      # This is WHERE the Docker image goes (the answer from Phase 4!)
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
 
-      # Step 3: Build the Docker image
-      # Tag with commit SHA for traceability (know exactly which code is deployed)
-      # Also tag as "latest" for convenience
       - name: Build Docker image
         run: docker build -t $IMAGE:$GITHUB_SHA -t $IMAGE:latest .
 
-      # Step 4: Push to Artifact Registry
-      # NOW the image has a permanent home (unlike Phase 4 where it was discarded)
-      # Anyone with access can pull this image and run it
       - name: Push Docker image
         run: |
           docker push $IMAGE:$GITHUB_SHA
           docker push $IMAGE:latest
 
-      # Step 5: Deploy to Cloud Run
-      # Cloud Run pulls the image from Artifact Registry and runs it
-      # Secrets are injected as environment variables (never in the image)
-      - name: Deploy to Cloud Run
+      - name: Deploy to Cloud Run (${{ needs.set-env.outputs.environment }})
         run: |
-          gcloud run deploy $SERVICE_NAME \
+          gcloud run deploy ${{ needs.set-env.outputs.service_name }} \
             --image $IMAGE:$GITHUB_SHA \
             --region $GCP_REGION \
             --platform managed \
             --allow-unauthenticated \
-            --set-env-vars "^##^PINECONE_API_KEY=${{ secrets.PINECONE_API_KEY }}##OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}##LANGSMITH_TRACING=true##LANGSMITH_ENDPOINT=https://api.smith.langchain.com##LANGSMITH_API_KEY=${{ secrets.LANGSMITH_API_KEY }}##LANGSMITH_PROJECT=rag-classic-dev" \
+            --set-env-vars "^##^PINECONE_API_KEY=${{ secrets.PINECONE_API_KEY }}##OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}##LANGSMITH_TRACING=true##LANGSMITH_ENDPOINT=https://api.smith.langchain.com##LANGSMITH_API_KEY=${{ secrets.LANGSMITH_API_KEY }}##LANGSMITH_PROJECT=${{ needs.set-env.outputs.langsmith_project }}" \
             --memory 2Gi \
             --cpu 2 \
             --min-instances 0 \
@@ -111,10 +117,11 @@ jobs:
             --cpu-boost \
             --quiet
 
-      # Step 6: Show the deployed URL
       - name: Show deployed URL
         run: |
-          URL=$(gcloud run services describe $SERVICE_NAME --region $GCP_REGION --format 'value(status.url)')
+          URL=$(gcloud run services describe ${{ needs.set-env.outputs.service_name }} --region $GCP_REGION --format 'value(status.url)')
           echo "🚀 Deployed to: $URL"
-          echo "   Health check: $URL/health"
-          echo "   Swagger docs: $URL/docs"
+          echo "   Environment: ${{ needs.set-env.outputs.environment }}"
+          echo "   LangSmith: ${{ needs.set-env.outputs.langsmith_project }}"
+          echo "   Health: $URL/health"
+          echo "   Docs: $URL/docs"
