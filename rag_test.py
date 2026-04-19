@@ -17,10 +17,11 @@ This file walks through the entire RAG pipeline in plain, linear code:
 import os
 import re
 import time
-from pypdf import PdfReader
-from pinecone import Pinecone
-from langchain_openai import ChatOpenAI
+
 from dotenv import load_dotenv
+from langchain_openai import ChatOpenAI
+from pinecone import Pinecone
+from pypdf import PdfReader
 
 load_dotenv()
 
@@ -271,7 +272,7 @@ print(f"{'='*60}")
 # ─────────────────────────────────────────────────────────────────────────────
 # STEP 8: Generate using reranked results (clean version)
 # ─────────────────────────────────────────────────────────────────────────────
-print(f"\n🔧 STEP 8: Generating a clean final answer from reranked chunks...")
+print("\n🔧 STEP 8: Generating a clean final answer from reranked chunks...")
 
 # Build context from reranked results (same as Step 7 but cleaner)
 ctx_parts = []
@@ -295,13 +296,13 @@ final_msg = llm.invoke([
 final_answer = final_msg.content
 
 print(f"\n{'='*60}")
-print(f"  Final Generated Answer (from reranked chunks)")
+print("  Final Generated Answer (from reranked chunks)")
 print(f"  Question: {QUESTION}")
-print(f"  Pipeline: retrieve → rerank → generate")
+print("  Pipeline: retrieve → rerank → generate")
 print(f"{'='*60}")
 print(f"\n{final_answer}\n")
 print(f"{'='*60}")
-print(f"  Sources used:")
+print("  Sources used:")
 for i, c in enumerate(reranked, 1):
     print(f"  [{i}] {c['source']}, p.{c['pages']} (score: {c['score']:.4f})")
 print(f"{'='*60}")
@@ -310,7 +311,7 @@ print(f"{'='*60}")
 # ─────────────────────────────────────────────────────────────────────────────
 # STEP 9: Test /generate API endpoint (if server is running)
 # ─────────────────────────────────────────────────────────────────────────────
-print(f"\n🌐 STEP 9: Testing /generate API endpoint...")
+print("\n🌐 STEP 9: Testing /generate API endpoint...")
 
 import json
 import urllib.request
@@ -335,19 +336,19 @@ try:
         data = json.loads(resp.read().decode())
 
     print(f"\n{'='*60}")
-    print(f"  /generate API Response")
+    print("  /generate API Response")
     print(f"  Pipeline: {data['pipeline']}")
     print(f"{'='*60}")
     print(f"\n{data['answer']}\n")
     print(f"{'='*60}")
-    print(f"  Sources:")
+    print("  Sources:")
     for s in data["sources"]:
         print(f"  {s['citation']} {s['source']}, p.{s['pages']} (score: {s['score']:.4f})")
     print(f"{'='*60}")
 
 except Exception as e:
     print(f"   ⚠️  API test skipped ({e})")
-    print(f"   Start the server first: python main.py serve")
+    print("   Start the server first: python main.py serve")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

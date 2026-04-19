@@ -2,16 +2,16 @@
 API module — FastAPI application exposing the RAG chatbot endpoints.
 """
 
+
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from typing import List, Optional
 
-from app.ingestion import ingest_document
-from app.embedding import upsert_chunks
-from app.retrieval import search
-from app.reranker import rerank
-from app.generation import generate_answer
 from app.agent import agentic_rag
+from app.embedding import upsert_chunks
+from app.generation import generate_answer
+from app.ingestion import ingest_document
+from app.reranker import rerank
+from app.retrieval import search
 
 # ── FastAPI app ──────────────────────────────────────────────────────────────
 app = FastAPI(
@@ -51,11 +51,11 @@ class SourceChunk(BaseModel):
 
 class ChatResponse(BaseModel):
     answer: str
-    sources: List[SourceChunk]
-    sub_queries: Optional[List[str]] = None          # agent decomposition
-    pipeline: Optional[str] = None
-    retrieved: Optional[List[SourceChunk]] = None    # raw retrieval (debug)
-    reranked: Optional[List[SourceChunk]] = None     # after reranking (debug)
+    sources: list[SourceChunk]
+    sub_queries: list[str] | None = None          # agent decomposition
+    pipeline: str | None = None
+    retrieved: list[SourceChunk] | None = None    # raw retrieval (debug)
+    reranked: list[SourceChunk] | None = None     # after reranking (debug)
 
 
 class GenerateRequest(BaseModel):
@@ -68,13 +68,13 @@ class GenerateRequest(BaseModel):
 class GenerateResponse(BaseModel):
     question: str
     answer: str
-    sources: List[SourceChunk]
+    sources: list[SourceChunk]
     pipeline: str               # "retrieve → rerank → generate" or "retrieve → generate"
 
 
 class SearchRequest(BaseModel):
     query: str
-    top_k: Optional[int] = 10
+    top_k: int | None = 10
     use_reranker: bool = True
 
 

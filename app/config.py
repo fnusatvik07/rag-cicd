@@ -3,6 +3,7 @@ Configuration module — loads environment variables and defines app-wide settin
 """
 
 import os
+
 from dotenv import load_dotenv
 
 load_dotenv()

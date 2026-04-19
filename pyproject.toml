@@ -13,3 +13,26 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "pydantic>=2.0.0",
 ]
+
+# -- Ruff linter configuration --
+[tool.ruff]
+line-length = 120             # max characters per line
+target-version = "py313"      # Python version we're targeting
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors (missing whitespace, wrong indentation)
+    "W",    # pycodestyle warnings (trailing whitespace, blank lines)
+    "F",    # pyflakes (unused imports, undefined names)
+    "I",    # isort (import ordering)
+    "UP",   # pyupgrade (use modern Python syntax)
+]
+ignore = [
+    "E501", # line too long - we set line-length above, this avoids double warnings
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]   # treat our app/ package as first-party imports
+
+[tool.ruff.lint.per-file-ignores]
+"rag_test.py" = ["E402"]      # walkthrough script has imports mid-file by design

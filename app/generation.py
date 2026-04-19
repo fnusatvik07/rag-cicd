@@ -4,10 +4,10 @@ and returns the final answer.
 Uses LangChain's ChatOpenAI for LLM interaction.
 """
 
-from typing import List, Dict
+
 from langchain_openai import ChatOpenAI
 
-from app.config import OPENAI_API_KEY, OPENAI_MODEL, MAX_TOKENS, TEMPERATURE
+from app.config import MAX_TOKENS, OPENAI_API_KEY, OPENAI_MODEL, TEMPERATURE
 
 _llm = ChatOpenAI(
     model=OPENAI_MODEL,
@@ -36,7 +36,7 @@ References:
 [2] Apple_Q24.pdf, p.5"""
 
 
-def build_context_block(chunks: List[Dict]) -> str:
+def build_context_block(chunks: list[dict]) -> str:
     """Format retrieved chunks into a numbered context string with page info."""
     parts = []
     for i, c in enumerate(chunks, 1):
@@ -48,7 +48,7 @@ def build_context_block(chunks: List[Dict]) -> str:
     return "\n\n".join(parts)
 
 
-def generate_answer(query: str, chunks: List[Dict]) -> str:
+def generate_answer(query: str, chunks: list[dict]) -> str:
     """
     Generate an answer with inline citations using LangChain ChatOpenAI.
     """
