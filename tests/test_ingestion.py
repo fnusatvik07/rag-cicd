@@ -1,8 +1,8 @@
 """Tests for the ingestion module - chunking and text processing logic."""
 
 import os
-from app.ingestion import clean_text, chunk_pages, ingest_document
 
+from app.ingestion import chunk_pages, clean_text, ingest_document
 
 # -- clean_text --
 
