@@ -2,14 +2,11 @@
 # This is the quality gate: code must pass lint, tests, and Docker build
 # before it can be merged or deployed.
 
-name: CI
+name: "CI: Lint, Test & Build"
 
-# When does this run?
 on:
-  push:
-    branches: [develop, main]     # Run on pushes to develop and main
   pull_request:
-    branches: [develop, main]     # Run on PRs targeting develop and main
+    branches: [develop, staging, main]
 
 jobs:
   ci:

@@ -7,7 +7,7 @@
 #   3. Push to ACR (Azure Container Registry)
 #   4. Deploy to Azure Container Apps
 
-name: Deploy (Azure - Staging)
+name: "Deploy: Azure (Staging)"
 
 on:
   push:

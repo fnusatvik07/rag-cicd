@@ -5,11 +5,11 @@
 #   staging -> Stage (rag-classic-stage, LANGSMITH_PROJECT=rag-classic-staging)
 #   main    -> Prod  (rag-classic-prod,  LANGSMITH_PROJECT=rag-classic-prod)
 
-name: Deploy
+name: "Deploy: GCP (Dev/Prod)"
 
 on:
   push:
-    branches: [develop, staging, main]
+    branches: [develop, main]
 
 env:
   GCP_PROJECT_ID: rag-pipeline-493809

@@ -3,13 +3,11 @@
 # This catches known security issues in our third-party packages
 # BEFORE they reach production.
 
-name: Security
+name: "Security: Snyk & Trivy"
 
 on:
-  push:
-    branches: [develop, main]
   pull_request:
-    branches: [develop, main]
+    branches: [develop, staging, main]
 
 jobs:
   # ---- Job 1: Dependency vulnerability scan ----
