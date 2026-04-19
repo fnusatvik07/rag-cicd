@@ -138,19 +138,26 @@ jobs:
       # Step 6: Deploy to App Runner
       - name: Deploy to App Runner
         run: |
+          echo "=== Config file contents ==="
+          cat /tmp/source-config.json
+          echo ""
+          echo "=== Listing services ==="
+
           SERVICE_ARN=$(aws apprunner list-services \
             --query "ServiceSummaryList[?ServiceName=='$APP_RUNNER_SERVICE'].ServiceArn | [0]" \
-            --output text 2>/dev/null)
+            --output text)
+
+          echo "SERVICE_ARN: $SERVICE_ARN"
 
           if [ "$SERVICE_ARN" = "None" ] || [ -z "$SERVICE_ARN" ]; then
-            echo "Creating new App Runner service..."
+            echo "=== Creating new App Runner service ==="
             aws apprunner create-service \
               --service-name $APP_RUNNER_SERVICE \
               --source-configuration file:///tmp/source-config.json \
               --instance-configuration '{"Cpu":"1024","Memory":"2048"}' \
               --health-check-configuration '{"Protocol":"HTTP","Path":"/health","Interval":10,"Timeout":5,"HealthyThreshold":1,"UnhealthyThreshold":5}'
           else
-            echo "Updating existing App Runner service..."
+            echo "=== Updating existing service ==="
             aws apprunner update-service \
               --service-arn $SERVICE_ARN \
               --source-configuration file:///tmp/source-config.json
