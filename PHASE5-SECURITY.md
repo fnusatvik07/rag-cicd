@@ -113,15 +113,52 @@ Trivy is a free, open-source vulnerability scanner. It scans Docker images for:
 ### Why scan the Docker image too?
 Our `python:3.13-slim` base image contains OS packages (openssl, libc, etc.) that can have their own vulnerabilities. Snyk only catches Python packages. Trivy catches both.
 
-## What is SonarQube/SonarCloud? (Conceptual)
+## Job 3: SonarCloud Code Quality Scan
 
-SonarQube scans your SOURCE CODE (not dependencies) for:
-- **Code smells**: Overly complex functions, duplicated code
+### What is SonarCloud?
+SonarCloud scans your SOURCE CODE (not dependencies) for:
 - **Bugs**: Null pointer risks, resource leaks
+- **Code smells**: Overly complex functions, duplicated code
 - **Security hotspots**: Hardcoded passwords, SQL injection patterns
 - **Test coverage**: What percentage of code is covered by tests
 
-SonarCloud (cloud version) is free for public repos. It adds a dashboard showing:
+SonarCloud (cloud version of SonarQube) is free for public repos.
+
+### How it works
+```yaml
+- name: Install dependencies and run tests with coverage
+  run: |
+    uv pip install ".[test]"
+    pytest tests/ -v --cov=app --cov-report=xml
+```
+First we run tests with `--cov=app` which measures how much of `app/` is exercised by tests.
+`--cov-report=xml` generates a `coverage.xml` file that SonarCloud reads.
+
+```yaml
+- name: SonarCloud Scan
+  uses: SonarSource/sonarqube-scan-action@v5
+  env:
+    SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+  with:
+    args: >
+      -Dsonar.organization=fnusatvik07
+      -Dsonar.projectKey=fnusatvik07_rag-cicd
+      -Dsonar.python.coverage.reportPaths=coverage.xml
+      -Dsonar.sources=app/
+      -Dsonar.tests=tests/
+      -Dsonar.host.url=https://sonarcloud.io
+```
+
+| Parameter | What it does |
+|-----------|-------------|
+| `sonar.organization` | Your SonarCloud org (matches GitHub username) |
+| `sonar.projectKey` | Unique project ID (matches GitHub repo) |
+| `sonar.python.coverage.reportPaths` | Points to the coverage.xml from pytest |
+| `sonar.sources` | Which directories contain production code |
+| `sonar.tests` | Which directories contain test code |
+
+### What the dashboard shows
+After the scan, SonarCloud shows a dashboard:
 ```
 Quality Gate: PASSED
   Bugs: 0
@@ -131,7 +168,16 @@ Quality Gate: PASSED
   Duplications: 1.2%
 ```
 
-We don't set it up hands-on (takes 15+ minutes to configure), but it's important to know it exists.
+### Snyk vs SonarCloud - they scan different things
+
+| | Snyk | SonarCloud |
+|---|------|-----------|
+| **Scans** | Third-party packages | Your source code |
+| **Finds** | Known CVEs in dependencies | Bugs, smells, security patterns |
+| **Coverage** | No | Yes (reads pytest coverage report) |
+| **Example finding** | "fastapi 0.115.0 has CVE-XXX" | "This function has complexity 25 (max 10)" |
+
+Both are needed. Snyk catches problems in OTHER people's code. SonarCloud catches problems in YOUR code.
 
 ## OWASP Top 10 (Know the list)
 
@@ -154,19 +200,31 @@ Our security scanning addresses #6 (Vulnerable Components) directly.
 
 ## Setup Required
 
-For Snyk to work, you need:
+### Snyk
 1. Create a free account at https://snyk.io
 2. Get your API token from Snyk dashboard -> Settings -> API Token
 3. Add it as a GitHub Secret: Repo -> Settings -> Secrets -> `SNYK_TOKEN`
 
-Trivy needs no setup - it's fully open source and runs without tokens.
+### SonarCloud
+1. Create a free account at https://sonarcloud.io (login with GitHub)
+2. Import your repo (fnusatvik07/rag-cicd)
+3. Get the token from SonarCloud -> My Account -> Security -> Generate Token
+4. Add it as a GitHub Secret: Repo -> Settings -> Secrets -> `SONAR_TOKEN`
+5. Update `sonar.organization` and `sonar.projectKey` in the workflow if different
+
+### Trivy
+No setup needed - fully open source, runs without tokens.
+
+### pytest-cov
+Added `pytest-cov>=6.0.0` to `[project.optional-dependencies] test` in `pyproject.toml` so SonarCloud gets coverage data.
 
 ## Key Takeaways
 
 1. **Your code is only as secure as your dependencies** - scan them automatically
-2. **Two layers of scanning** - Python packages (Snyk) + Docker OS packages (Trivy)
+2. **Three layers of scanning** - Python packages (Snyk) + Docker image (Trivy) + Source code (SonarCloud)
 3. **Severity matters** - don't block builds on low-severity issues, focus on HIGH/CRITICAL
 4. **Shift left** - catch vulnerabilities in CI, not after deployment
-5. **SonarQube for code quality** - scans your code for bugs, smells, and coverage
+5. **SonarCloud shows coverage** - see what % of your code is tested, find blind spots
 6. **OWASP Top 10** - the standard list of web security risks every developer should know
 7. **Free tools exist** - Snyk (free tier), Trivy (open source), SonarCloud (free for public repos)
+8. **Snyk + SonarCloud complement each other** - Snyk scans OTHER people's code, SonarCloud scans YOUR code
